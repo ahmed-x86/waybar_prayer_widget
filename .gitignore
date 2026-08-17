@@ -1,0 +1,8 @@
+auto_push.py
+WallMesh_autogen
+CMakeFiles
+build
+.qt
+CMakeCache.txt
+cmake_install.cmake
+Makefile
