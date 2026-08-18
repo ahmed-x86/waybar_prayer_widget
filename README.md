@@ -1,3 +1,5 @@
+[English](README.md) | [عربي](README-AR.md)
+
 # Waybar Prayer Times Widget 🕌⏳
 
 A lightweight and smart Python script tailored for the **Waybar** status bar that displays Islamic prayer times based on your geographical location using the Aladhan API. It features a live countdown to the upcoming prayer and supports interactive scrolling to check prayer times across different dates.
@@ -6,13 +8,13 @@ A lightweight and smart Python script tailored for the **Waybar** status bar tha
 
 * **Smart Countdown:** Accurately displays the name of the next prayer and the time remaining until it begins.
 * **Interactive Mouse Scrolling:**
-* **Scroll Up:** View prayer times for upcoming days.
-* **Scroll Down:** Navigate back to previous days.
-* **Middle Click:** Instantly reset the view to the current day.
-
-
+  * **Scroll Up:** View prayer times for upcoming days.
+  * **Scroll Down:** Navigate back to previous days.
+  * **Middle Click:** Instantly reset the view to the current day.
+* **🌙 Hijri Date Display (New):** Shows the Hijri date alongside the Gregorian date in the tooltip and directly on the bar while scrolling through days.
+* **📶 Offline Support (New):** Persists cache across reboots to ensure the widget continues working and displaying the countdown even without an active internet connection.
 * **Detailed Tooltip:** Hovering over the widget reveals the full daily prayer schedule, with the upcoming prayer highlighted.
-* **Local Caching:** Fetches and stores 4 months of data locally to minimize internet usage and allow offline functionality most of the time.
+* **Local Caching:** Fetches and stores 4 months of data locally to minimize internet usage.
 * **Instant Updates:** Utilizes system signals (`SIGRTMIN`) to instantly refresh the Waybar module upon scrolling.
 
 ---
@@ -80,10 +82,12 @@ Add the following snippets to your `~/.config/waybar/style.css` file. I've inclu
 /* -----------------------------------------------------
    Alternative Styles (Pick one and change the ID to #custom-prayer to use it)
    ----------------------------------------------------- */
-   ```
-#### Option 2: Peach (Warm Orange)
-```css
 
+```
+
+#### Option 2: Peach (Warm Orange)
+
+```css
 #custom-prayer-peach {
     background-color: rgba(250, 179, 135, 0.15);
     color: #fab387;
@@ -101,10 +105,12 @@ Add the following snippets to your `~/.config/waybar/style.css` file. I've inclu
     border-color: #fab387;
     box-shadow: 0 0 5px rgba(250, 179, 135, 0.5);
 }
-```
-#### Option 3: Mauve (Soft Purple)
-```css
 
+```
+
+#### Option 3: Mauve (Soft Purple)
+
+```css
 #custom-prayer-mauve {
     background-color: rgba(203, 166, 247, 0.15);
     color: #cba6f7;
@@ -122,10 +128,12 @@ Add the following snippets to your `~/.config/waybar/style.css` file. I've inclu
     border-color: #cba6f7;
     box-shadow: 0 0 5px rgba(203, 166, 247, 0.5);
 }
-```
-#### Option 4: Sapphire (Blue)
-```css
 
+```
+
+#### Option 4: Sapphire (Blue)
+
+```css
 #custom-prayer-sapphire {
     background-color: rgba(116, 199, 236, 0.15);
     color: #74c7ec;
@@ -150,8 +158,8 @@ Add the following snippets to your `~/.config/waybar/style.css` file. I've inclu
 
 ## 🗂️ Cache Files
 
-The script generates files in the `/tmp/` directory to ensure optimal performance and avoid unnecessary server requests:
+The script generates files in the `~/.cache/waybar_prayer/` directory to ensure optimal performance, avoid unnecessary server requests, and persist data across system reboots:
 
-* `/tmp/waybar_prayer_times_cairo_extended.json`: Contains the cached prayer times data.
-* `/tmp/waybar_prayer_offset.txt`: Stores the current scroll offset value.
-*(These files are stored in RAM and are automatically cleared upon system reboot).*
+* `~/.cache/waybar_prayer/cairo_extended.json`: Contains the cached prayer times and Hijri dates data.
+* `~/.cache/waybar_prayer/offset.txt`: Stores the current scroll offset value.
+*(These files are stored permanently in your user cache directory, allowing the script to work perfectly offline after restarting your PC).*
