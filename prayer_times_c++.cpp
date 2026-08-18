@@ -29,7 +29,6 @@ std::map<std::string, std::string> PRAYER_NAMES = {
     {"Isha", "العشاء"}
 };
 
-// دوال مساعدة لـ cURL
 size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp) {
     ((std::string*)userp)->append((char*)contents, size * nmemb);
     return size * nmemb;
@@ -46,6 +45,8 @@ std::string fetch_url(const std::string& url) {
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, &readBuffer);
         curl_easy_setopt(curl, CURLOPT_TIMEOUT, 5L);
         curl_easy_setopt(curl, CURLOPT_USERAGENT, "Mozilla/5.0");
+        // تفعيل تتبع إعادة التوجيه (Follow Redirects)
+        curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L); 
         res = curl_easy_perform(curl);
         curl_easy_cleanup(curl);
         if (res == CURLE_OK) return readBuffer;
@@ -53,7 +54,34 @@ std::string fetch_url(const std::string& url) {
     return "";
 }
 
-// بناء الكاش
+void parse_api_response_to_cache(const std::string& response, json& cache_dict) {
+    try {
+        json j = json::parse(response);
+        if (j.contains("data")) {
+            for (auto& day : j["data"]) {
+                std::string date_str = day["date"]["gregorian"]["date"];
+                json timings = json::object();
+                for (auto& [key, val] : day["timings"].items()) {
+                    if (PRAYER_NAMES.count(key)) {
+                        std::string time_str = val.get<std::string>();
+                        timings[key] = time_str.substr(0, 5);
+                    }
+                }
+                
+                auto hijri_data = day["date"]["hijri"];
+                std::string hijri_str = hijri_data["day"].get<std::string>() + " " + 
+                                        hijri_data["month"]["ar"].get<std::string>() + " " + 
+                                        hijri_data["year"].get<std::string>();
+                                        
+                cache_dict[date_str] = {
+                    {"timings", timings},
+                    {"hijri", hijri_str}
+                };
+            }
+        }
+    } catch (...) {}
+}
+
 json build_cache() {
     auto now = std::chrono::system_clock::now();
     std::time_t now_c = std::chrono::system_clock::to_time_t(now);
@@ -63,7 +91,7 @@ json build_cache() {
     int current_year = now_tm->tm_year + 1900;
     
     std::vector<int> mo_offsets = {-1, 0, 1, 2};
-    json all_data = json::array();
+    json cache_dict = json::object();
     
     for (int mo : mo_offsets) {
         int m = current_month + mo;
@@ -71,51 +99,18 @@ json build_cache() {
         while (m > 12) { m -= 12; y++; }
         while (m < 1) { m += 12; y--; }
         
-        std::string url = "http://api.aladhan.com/v1/calendarByCity?city=" + CITY + 
+        // تعديل الرابط ليكون HTTPS
+        std::string url = "https://api.aladhan.com/v1/calendarByCity?city=" + CITY + 
                           "&country=" + COUNTRY + "&method=" + std::to_string(METHOD) + 
                           "&month=" + std::to_string(m) + "&year=" + std::to_string(y);
         
         std::string response = fetch_url(url);
-        if (!response.empty()) {
-            try {
-                json j = json::parse(response);
-                if (j.contains("data")) {
-                    for (auto& item : j["data"]) {
-                        all_data.push_back(item);
-                    }
-                }
-            } catch (...) {}
-        }
-    }
-    
-    if (all_data.empty()) return json::object();
-    
-    json cache_dict = json::object();
-    for (auto& day : all_data) {
-        std::string date_str = day["date"]["gregorian"]["date"];
-        json timings = json::object();
-        for (auto& [key, val] : day["timings"].items()) {
-            if (PRAYER_NAMES.count(key)) {
-                std::string time_str = val.get<std::string>();
-                timings[key] = time_str.substr(0, 5); // استخراج HH:MM
-            }
-        }
-        
-        auto hijri_data = day["date"]["hijri"];
-        std::string hijri_str = hijri_data["day"].get<std::string>() + " " + 
-                                hijri_data["month"]["ar"].get<std::string>() + " " + 
-                                hijri_data["year"].get<std::string>();
-                                
-        cache_dict[date_str] = {
-            {"timings", timings},
-            {"hijri", hijri_str}
-        };
+        if (!response.empty()) parse_api_response_to_cache(response, cache_dict);
     }
     return cache_dict;
 }
 
 int main(int argc, char* argv[]) {
-    // إعداد المسارات
     std::string home_dir = getenv("HOME");
     fs::path cache_dir = home_dir + "/.cache/waybar_prayer";
     if (!fs::exists(cache_dir)) fs::create_directories(cache_dir);
@@ -123,7 +118,6 @@ int main(int argc, char* argv[]) {
     fs::path cache_file = cache_dir / "cairo_extended.json";
     fs::path offset_file = cache_dir / "offset.txt";
     
-    // معالجة التمرير (Scroll)
     int offset = 0;
     if (fs::exists(offset_file)) {
         std::ifstream ifs(offset_file);
@@ -132,19 +126,63 @@ int main(int argc, char* argv[]) {
     
     if (argc > 1) {
         std::string cmd = argv[1];
-        if (cmd == "up") offset++;
-        else if (cmd == "down") offset--;
-        else if (cmd == "reset") offset = 0;
+        if (cmd == "up") { offset++; }
+        else if (cmd == "down") { offset--; }
+        else if (cmd == "reset") { offset = 0; }
+        else if (cmd == "rebuild") {
+            if (fs::exists(cache_file)) fs::remove(cache_file);
+            if (fs::exists(offset_file)) fs::remove(offset_file);
+            std::system("pkill -SIGRTMIN+9 waybar");
+            return 0;
+        }
+        else if (cmd == "fetch_missing") {
+            auto now = std::chrono::system_clock::now();
+            std::time_t now_c = std::chrono::system_clock::to_time_t(now);
+            std::tm* now_tm = std::localtime(&now_c);
+            
+            std::tm target_tm = *now_tm;
+            target_tm.tm_mday += offset;
+            std::mktime(&target_tm);
+            
+            int target_m = target_tm.tm_mon + 1;
+            int target_y = target_tm.tm_year + 1900;
+            
+            // تعديل الرابط ليكون HTTPS
+            std::string url = "https://api.aladhan.com/v1/calendarByCity?city=" + CITY + 
+                              "&country=" + COUNTRY + "&method=" + std::to_string(METHOD) + 
+                              "&month=" + std::to_string(target_m) + "&year=" + std::to_string(target_y);
+            
+            std::string response = fetch_url(url);
+            if (!response.empty()) {
+                json cache_json;
+                if (fs::exists(cache_file)) {
+                    try { std::ifstream ifs(cache_file); ifs >> cache_json; } 
+                    catch (...) {}
+                }
+                if (!cache_json.contains("data")) {
+                    cache_json = {{"cached_month", now_tm->tm_mon + 1}, {"data", json::object()}};
+                }
+                
+                json new_data = json::object();
+                parse_api_response_to_cache(response, new_data);
+                
+                if (!new_data.empty()) {
+                    cache_json["data"].update(new_data); 
+                    std::ofstream ofs(cache_file);
+                    ofs << cache_json.dump(2);
+                }
+            }
+            std::system("pkill -SIGRTMIN+9 waybar");
+            return 0;
+        }
         
         std::ofstream ofs(offset_file);
         ofs << offset;
         ofs.close();
-        
         std::system("pkill -SIGRTMIN+9 waybar");
         return 0;
     }
 
-    // جلب الوقت الحالي والتاريخ المستهدف
     auto now = std::chrono::system_clock::now();
     std::time_t now_c = std::chrono::system_clock::to_time_t(now);
     std::tm* now_tm = std::localtime(&now_c);
@@ -165,7 +203,6 @@ int main(int argc, char* argv[]) {
     tomorrow_stream << std::put_time(&tomorrow_tm, "%d-%m-%Y");
     std::string tomorrow_str = tomorrow_stream.str();
 
-    // التعامل مع الكاش
     json times_db = json::object();
     bool cache_valid = false;
     
@@ -178,7 +215,7 @@ int main(int argc, char* argv[]) {
                 times_db = cache_json["data"];
                 cache_valid = true;
             } else if (cache_json.contains("data")) {
-                times_db = cache_json["data"]; // Fallback if offline
+                times_db = cache_json["data"];
             }
         } catch (...) {}
     }
@@ -193,11 +230,11 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // بناء المخرجات لـ Waybar
     json output;
+    
     if (times_db.empty() || !times_db.contains(target_str)) {
         output["text"] = "📅 " + target_short_stream.str();
-        output["tooltip"] = "<span size='large' weight='bold'>أوقات الصلاة (" + target_str + ")</span>\n\n<span color='#f38ba8'>عذراً، لم يتم تحميل مواقيت هذا اليوم. يرجى الاتصال بالإنترنت.</span>";
+        output["tooltip"] = "<span size='large' weight='bold'>أوقات الصلاة (" + target_str + ")</span>\n\n<span color='#f38ba8'>عذراً، بيانات هذا اليوم غير متوفرة.</span>\n<span color='#a6e3a1'><i>* اضغط بالزر الأيمن (Right Click) لجلب بيانات هذا الشهر</i></span>";
         std::cout << output.dump() << std::endl;
         return 0;
     }
@@ -206,7 +243,6 @@ int main(int argc, char* argv[]) {
     json timings = today_data["timings"];
     std::string hijri_date = today_data["hijri"];
     
-    // ترتيب الصلوات (بحسب ترتيب الإدخال الزمني)
     std::vector<std::pair<std::string, std::string>> sorted_prayers;
     for (auto& [key, val] : timings.items()) sorted_prayers.push_back({key, val.get<std::string>()});
     std::sort(sorted_prayers.begin(), sorted_prayers.end(), [](auto& a, auto& b) { return a.second < b.second; });
@@ -234,11 +270,10 @@ int main(int argc, char* argv[]) {
             if (times_db.contains(tomorrow_str) && times_db[tomorrow_str]["timings"].contains("Fajr")) {
                 next_prayer_time_str = times_db[tomorrow_str]["timings"]["Fajr"];
             } else {
-                next_prayer_time_str = "05:00"; // Fallback
+                next_prayer_time_str = "05:00"; 
             }
         }
         
-        // حساب الوقت المتبقي
         int h, m;
         sscanf(next_prayer_time_str.c_str(), "%d:%d", &h, &m);
         std::tm target_prayer_tm = *now_tm;
@@ -276,7 +311,7 @@ int main(int argc, char* argv[]) {
         for (auto& p : sorted_prayers) {
             tooltip += PRAYER_NAMES[p.first] + ": " + p.second + "\n";
         }
-        tooltip += "\n<span size='small' color='#f9e2af'><i>* اضغط بالزر الأوسط للعودة لليوم</i></span>";
+        tooltip += "\n<span size='small' color='#f9e2af'><i>* اضغط بالزر الأوسط للعودة لليوم الحالي</i></span>";
         
         std::istringstream iss(hijri_date);
         std::string h_day, h_month;
