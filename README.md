@@ -74,6 +74,8 @@ Add the following module to your `~/.config/waybar/config` file under the `modul
         "interval": 60,
         "format": "{}",
         "tooltip": true,
+        "on-click": "~/.config/waybar/scripts/prayer_times rebuild",
+        "on-click-right": "~/.config/waybar/scripts/prayer_times fetch_missing",
         "on-scroll-up": "~/.config/waybar/scripts/prayer_times up",
         "on-scroll-down": "~/.config/waybar/scripts/prayer_times down",
         "on-click-middle": "~/.config/waybar/scripts/prayer_times reset",
